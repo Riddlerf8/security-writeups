@@ -1,6 +1,6 @@
 # 🧨 Security Write-ups
 
-![Writeups](https://img.shields.io/badge/writeups-1-blue)
+![Writeups](https://img.shields.io/badge/writeups-3-blue)
 ![Focus](https://img.shields.io/badge/focus-web%20security-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -10,9 +10,11 @@ Everything here comes from **public training labs and CTF-style platforms**. No 
 
 ## Index
 
-| Write-up | Category | Levels | Description |
+| Write-up | Category | Platform | Description |
 |---|---|---|---|
-| [GYM XSS — p01 to p20](./gym-xss/) | Cross-Site Scripting | 20/20 | Full context-breakout walkthrough of Brute Logic's XSS GYM — HTML, attribute, JS-string, and template-literal contexts. |
+| [GYM XSS — p01 to p20](./gym-xss/) | Cross-Site Scripting | Brute Logic XSS GYM | Full context-breakout walkthrough — HTML, attribute, JS-string, and template-literal contexts (20/20 levels). |
+| [CORS Origin Reflection — Admin API Key Exfiltration](./cors-api-key-exfil/) | CORS Misconfiguration | PortSwigger Academy | Exploiting a reflected-origin CORS policy to exfiltrate an authenticated admin's API key. |
+| [WordPress Core Admin Creation — CSRF](./wordpress-csrf/) | CSRF | Local Docker Lab | Source-level nonce analysis showing how same-origin execution defeats WordPress's CSRF protections. |
 
 *More write-ups added as they're completed.*
 
