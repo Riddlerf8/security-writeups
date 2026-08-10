@@ -24,8 +24,7 @@ Security-focused write-ups covering exploitation techniques, payload constructio
 
 ## Contact
 
-- Portfolio / CV: see linked page (add your link here)
-- Reach out via GitHub Issues or [your contact method]
+- Reach out via GitHub Issues or [https://t.me/Sepehr_FK]
 
 ---
 
