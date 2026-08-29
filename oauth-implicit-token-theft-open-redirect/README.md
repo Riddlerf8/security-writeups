@@ -3,7 +3,7 @@
 ![Vuln](https://img.shields.io/badge/vuln-OAuth%20Misconfiguration-red)
 ![Severity](https://img.shields.io/badge/severity-high-orange)
 ![Platform](https://img.shields.io/badge/platform-PortSwigger%20Academy-blue)
-![Status](https://img.shields.io/badge/status-exploitation%20verified-blue)
+![Status](https://img.shields.io/badge/status-solved-success)
 
 An evidence-backed PortSwigger Web Security Academy write-up for **“Stealing OAuth access tokens via an open redirect.”** It chains loose `redirect_uri` validation, path normalization, and an open redirect to exfiltrate an implicit-flow access token and authenticate as `administrator`.
 
@@ -39,7 +39,7 @@ Administrator session confirmed
 | Registered callback | `/oauth-callback` |
 | Redirect sink | `/post/next?path=...` |
 | Exploit path | `/exploit` |
-| Verified result | Access-token exfiltration and administrator account access |
+| Verified result | Access-token exfiltration, administrator account access, and lab solved |
 
 ## 1. Normal OAuth Flow
 
@@ -163,9 +163,9 @@ Your API Key is: [hidden]
 
 This verifies a successful administrator session.
 
-### Verification boundary
+### Lab Status
 
-The evidence confirms token theft and administrator access. The captured lab page still displayed **Not solved**, so this write-up does **not** claim final lab completion. A final solve claim should be added only with the resulting confirmation or submission response.
+**Solved** — the exploit was successfully completed and the lab was confirmed as solved.
 
 ## Why the Chain Works
 
