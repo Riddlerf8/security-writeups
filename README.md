@@ -16,7 +16,7 @@ Everything here comes from **public training labs and CTF-style platforms**. No 
 | [CORS Origin Reflection — Admin API Key Exfiltration](./cors-api-key-exfil/) | CORS Misconfiguration | PortSwigger Academy | Exploiting a reflected-origin CORS policy to exfiltrate an authenticated admin's API key. |
 | [WordPress Core Admin Creation — CSRF](./wordpress-csrf/) | CSRF | Local Docker Lab | Source-level nonce analysis showing how same-origin execution defeats WordPress's CSRF protections. |
 | [OAuth Account Hijacking — `redirect_uri`](./oauth-account-hijacking-redirect-uri/) | OAuth Misconfiguration | PortSwigger Academy | Exploiting weak redirect URI validation to steal an admin authorization code, hijack the account, and delete `carlos`. |
-| [OAuth Implicit Flow — Access Token Theft](./oauth-implicit-token-theft-open-redirect/) | OAuth / Open Redirect | PortSwigger Academy | Chaining weak callback validation, path traversal, and an open redirect to leak an OAuth access token. |
+| [Stealing OAuth Access Tokens via an Open Redirect](./oauth-implicit-token-theft-open-redirect/) | OAuth / Open Redirect | PortSwigger Academy | Evidence-backed token theft through weak callback validation, path traversal, and an open redirect; administrator access verified. |
 
 *More write-ups added as they're completed.*
 
